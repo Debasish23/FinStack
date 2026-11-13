@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FinStack</title>
+  <meta name="description" content="FinStack — a private, local-first view of your net worth, budget and reserves.">
+  <meta name="theme-color" content="#0d0d0d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon.svg">
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('finstack.theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <script src="js/fonts.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="booting">
+
+  <!-- Opening animation -->
+  <div id="splash" role="img" aria-label="FinStack">
+    <div class="splash-inner">
+      <svg class="splash-logo" viewBox="0 0 96 96" aria-hidden="true">
+        <path class="layer l3" d="M48 54 84 70 48 86 12 70Z"/>
+        <path class="layer l2" d="M48 34 84 50 48 66 12 50Z"/>
+        <path class="layer l1" d="M48 14 84 30 48 46 12 30Z"/>
+      </svg>
+      <div class="splash-word" aria-hidden="true">
+        <span>F</span><span>i</span><span>n</span><span class="w2">S</span><span class="w2">t</span><span class="w2">a</span><span class="w2">c</span><span class="w2">k</span>
+      </div>
+      <div class="splash-tag">Your money, in one calm place</div>
+      <div class="splash-bar"><i></i></div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <button class="icon-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
+      <span class="burger"><i></i><i></i><i></i></span>
+    </button>
+    <a class="brand" href="#/dashboard" aria-label="FinStack home">
+      <svg viewBox="0 0 96 96" aria-hidden="true">
+        <path class="layer l3" d="M48 54 84 70 48 86 12 70Z"/>
+        <path class="layer l2" d="M48 34 84 50 48 66 12 50Z"/>
+        <path class="layer l1" d="M48 14 84 30 48 46 12 30Z"/>
+      </svg>
+      <span>FinStack</span>
+    </a>
+    <button class="icon-btn" id="eye-all" aria-label="Show all amounts" aria-pressed="false"></button>
+  </header>
+
+  <div id="scrim" hidden></div>
+  <aside id="drawer" aria-label="Menu" inert>
+    <div class="drawer-head">
+      <span class="drawer-title">Menu</span>
+      <button class="icon-btn" id="menu-close" aria-label="Close menu"></button>
+    </div>
+    <nav id="nav"></nav>
+    <div class="drawer-foot" id="drawer-foot"></div>
+  </aside>
+
+  <main id="view" tabindex="-1"></main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+  <input type="file" id="file-input" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+
+  <script src="js/xlsx-lite.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

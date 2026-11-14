@@ -26,6 +26,7 @@
     bank: svg('<path d="M3 9.5 12 4l9 5.5"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>'),
     card: svg('<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/>'),
     shield: svg('<path d="M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6l-7-3Z"/>'),
+    download: svg('<path d="M12 4v12M7.5 11.5 12 16l4.5-4.5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),
     upload: svg('<path d="M12 16V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),
     user: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/>'),
     sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
@@ -267,7 +268,7 @@
         <div class="clock" aria-live="off"><span id="clk-hm">--:--</span><span class="clk-s" id="clk-s">--</span><span class="clk-ap" id="clk-ap"></span></div>
         <p class="hero-sub" id="greet-sub">${g[2]}</p>
       </section>
-      ${model.meta.sample ? `<section class="banner" data-reveal><div>${I.info}<p><b>You are viewing sample data.</b> Import your Excel workbook to see your own numbers — it stays on this device.</p></div><button class="btn btn-primary" data-action="import">${I.upload}Import Excel</button></section>` : ''}
+      ${model.meta.sample ? `<section class="banner" data-reveal><div>${I.info}<p><b>You are viewing sample data.</b> Import your Excel workbook to see your own numbers — it stays on this device.</p></div><span class="tool-btns"><a class="btn" href="assets/FinStack-template.xlsx" download="FinStack-template.xlsx">${I.download}Get template</a><button class="btn btn-primary" data-action="import">${I.upload}Import Excel</button></span></section>` : ''}
       <section class="tiles">${tiles}</section>
       ${netNote}
       <div class="grid2">
@@ -632,6 +633,7 @@
     const light = document.documentElement.dataset.theme === 'light';
     $('#drawer-foot').innerHTML = `<p class="source">${meta.sample ? 'Showing sample data' : `${esc(meta.source)} · imported ${when}`}</p>
       <button class="drawer-btn" data-action="import">${I.upload}<span>Import Excel</span></button>
+      <a class="drawer-btn" href="assets/FinStack-template.xlsx" download="FinStack-template.xlsx">${I.download}<span>Download Excel template</span></a>
       <button class="drawer-btn" data-action="name">${I.user}<span>Display name</span></button>
       <button class="drawer-btn" data-action="font">${I.type}<span>Change font</span></button>
       <button class="drawer-btn" data-action="theme">${light ? I.moon : I.sun}<span>${light ? 'Dark theme' : 'Light theme'}</span></button>
@@ -670,7 +672,7 @@
       <p class="modal-sub">Choose the Excel file with your Budget, Bank Accounts, Investment, Credit Cards and Monthly track sheets.${state.model.meta.sample ? '' : ' Importing replaces everything here, including edits made in Monthly Track.'}</p>
       <div id="import-body"><button class="drop" id="drop" data-action="pick">${I.upload}<b>Choose an .xlsx file</b><span>or drop it here</span></button>
       <p class="fine">${I.shield} The file is read in your browser. Nothing is uploaded anywhere.</p>
-      <p class="fine">${I.info}<span>New here? <a class="tpl" href="assets/FinStack-template.xlsx" download>Download the Excel template</a>, fill in the yellow cells, then import it.</span></p></div>`);
+      <p class="fine">${I.info}<span>New here? <a class="tpl" href="assets/FinStack-template.xlsx" download="FinStack-template.xlsx">Download the Excel template</a>, fill in the yellow cells, then import it.</span></p></div>`);
   }
   async function handleFile(file) {
     const body = $('#import-body');

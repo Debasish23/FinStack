@@ -1,5 +1,6 @@
 # Never commit personal finance data — import it in the app instead.
 *.xlsx
+!assets/FinStack-template.xlsx
 *.xls
 *.csv
 .claude/

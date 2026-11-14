@@ -21,6 +21,10 @@ The file is read inside the browser and saved to that browser's local storage. N
 
 All amounts start hidden. Tap the eye on a tile to reveal that number, or the eye in the top bar to reveal everything.
 
+### Starting from the template
+
+`assets/FinStack-template.xlsx` is a ready-made workbook in the layout FinStack reads (also linked from the Import dialog). Fill in the yellow cells, replacing the fictional example values, and leave the headings and formula cells as they are. Its first sheet, **Start here**, explains the rules.
+
 ### Sheets FinStack looks for
 
 | Sheet name contains | What is read |

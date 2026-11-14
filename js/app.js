@@ -669,7 +669,8 @@
       <h2>Import your workbook</h2>
       <p class="modal-sub">Choose the Excel file with your Budget, Bank Accounts, Investment, Credit Cards and Monthly track sheets.${state.model.meta.sample ? '' : ' Importing replaces everything here, including edits made in Monthly Track.'}</p>
       <div id="import-body"><button class="drop" id="drop" data-action="pick">${I.upload}<b>Choose an .xlsx file</b><span>or drop it here</span></button>
-      <p class="fine">${I.shield} The file is read in your browser. Nothing is uploaded anywhere.</p></div>`);
+      <p class="fine">${I.shield} The file is read in your browser. Nothing is uploaded anywhere.</p>
+      <p class="fine">${I.info}<span>New here? <a class="tpl" href="assets/FinStack-template.xlsx" download>Download the Excel template</a>, fill in the yellow cells, then import it.</span></p></div>`);
   }
   async function handleFile(file) {
     const body = $('#import-body');

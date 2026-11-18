@@ -49,6 +49,15 @@ Log what you actually spend. Tap the **+** button, pick the date, enter the amou
 
 Entries are stored in the browser under their own key, so re-importing the workbook does not remove them. **Remove my data** does.
 
+## Accounts and sync (Supabase)
+
+When `js/config.js` holds a Supabase project URL and anon key, FinStack asks you to sign in and keeps your data in your account, so the phone and the computer show the same numbers. With both values empty it runs in this-browser-only mode as before.
+
+- `supabase/schema.sql` creates the two tables (`finstack_data`, one row per user; `finstack_spends`, one row per spend) and the Row Level Security policies that let each user read and write only their own rows. Run it once in the Supabase SQL Editor.
+- The anon key is public by design; the policies are what protect the data. Never put the `service_role` key in the app.
+- Changes are saved on the device first and pushed when online, so the app keeps working offline.
+- In Supabase → Authentication → URL Configuration, set the Site URL to where the app is hosted and add it to Redirect URLs, so confirmation and password-reset emails link back to the app.
+
 ## Fonts
 
 Open the menu and choose **Change font** to switch fonts; the app updates as you tap, and the choice is remembered on that device.

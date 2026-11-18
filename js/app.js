@@ -57,6 +57,18 @@
   const state = { model: FinData.load(), m: null, reveal: false, tiles: new Set(), budgetTab: null, yearly: false, justAdded: -1, editMonthly: false, addedPath: '' };
   const recalc = () => { state.m = FinData.metrics(state.model); };
   recalc();
+
+  /* Accounts + cloud sync (only when js/config.js has a Supabase project). */
+  const cloud = window.FinCloud;
+  const CLOUD = !!(cloud && cloud.enabled);
+  Object.assign(state, { userId: null, cloudReady: !CLOUD, offline: false, authMode: 'signin', pulledAt: 0, legacy: null });
+  const prefs = () => ({ name: store.get('finstack.name') });
+  /* Save the model on this device and, when accounts are on, queue it for the cloud. */
+  function persist() {
+    const ok = FinData.save(state.model);
+    if (CLOUD && (cloud.user() || state.offline)) cloud.saveData(state.model, prefs());
+    return ok;
+  }
   const displayName = () => {
     const saved = store.get('finstack.name');
     if (saved != null) return saved;
@@ -511,7 +523,7 @@
   function monthlyChanged() {
     recalc();
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => FinData.save(state.model), 250);
+    saveTimer = setTimeout(() => persist(), 250);
     const stats = $('#mt-stats');
     if (stats) { stats.innerHTML = mtStats(); $$('[data-reveal]', stats).forEach((el) => el.classList.add('in')); }
     $$('[data-total]').forEach((el) => { el.dataset.v = state.m[el.dataset.total]; });
@@ -714,7 +726,10 @@
         <input type="hidden" name="id" value="${esc(s ? s.id : '')}">
         <div class="form-row"><label>Date<input type="date" name="date" required value="${date}"></label>
           <label>Amount (₹)<input name="amount" type="number" inputmode="decimal" min="1" step="any" required value="${s ? s.amount : ''}" placeholder="0"></label></div>
-        <fieldset><legend>Category</legend><div class="cats">${SPEND_CATS.map(([c, t]) => `<label class="cat-opt"><input type="radio" name="cat" value="${esc(c)}" data-type="${t}" required ${c === cat ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div></fieldset>
+        <label>Category<span class="select"><select name="cat" required>
+          <option value="" disabled ${cat ? '' : 'selected'}>Choose a category</option>
+          ${SPEND_CATS.map(([c, t]) => `<option value="${esc(c)}" data-type="${t}" ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        </select></span></label>
         <fieldset><legend>Type</legend><div class="type-pick">${TYPES.map((t) => `<label class="type-opt" style="--c:${t.color}"><input type="radio" name="type" value="${t.key}" required ${t.key === type ? 'checked' : ''}><span><i class="dot"></i>${t.label}</span></label>`).join('')}</div></fieldset>
         <label><span>Note <small>(optional)</small></span><input name="note" maxlength="60" value="${esc(s && s.note ? s.note : '')}" autocomplete="off" placeholder="e.g. Big Bazaar"></label>
         <div class="modal-actions">${s ? `<button type="button" class="btn btn-danger-ghost" data-action="spend-del" data-id="${esc(s.id)}">${I.trash}Delete</button><span class="grow"></span>` : ''}
@@ -748,7 +763,88 @@
     if (io) els.filter((el) => !now.includes(el)).forEach((el) => io.observe(el));
   }
 
+  /* ---------- Accounts ---------- */
+  const locked = () => CLOUD && !state.offline && (!state.cloudReady || !cloud.user());
+  function renderAuth() {
+    document.body.classList.add('locked');
+    $('#fab').hidden = true;
+    const view = $('#view');
+    if (!state.cloudReady) {
+      view.innerHTML = `<div class="page page-auth"><div class="loading">${state.cloudError ? `${I.bad}<p>${esc(state.cloudError)}</p><button class="btn" onclick="location.reload()">Try again</button>` : '<span class="spinner"></span><p>Connecting…</p>'}</div></div>`;
+      return;
+    }
+    const up = state.authMode === 'signup';
+    view.innerHTML = `<div class="page page-auth"><section class="card auth" data-reveal>
+      <span class="auth-logo">${I.layers}</span>
+      <h1>${up ? 'Create your account' : 'Welcome back'}</h1>
+      <p class="modal-sub">${up ? 'Your numbers are saved to your account and stay in sync on your phone and computer.' : 'Sign in to see your numbers on any device.'}</p>
+      <form data-form="auth">
+        <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" required></label>
+        <label>Password<input name="password" type="password" minlength="8" autocomplete="${up ? 'new-password' : 'current-password'}" required></label>
+        ${up ? '<p class="fine">At least 8 characters.</p>' : ''}
+        <p class="auth-msg" id="auth-msg" role="status"></p>
+        <button class="btn btn-primary">${up ? 'Create account' : 'Sign in'}</button>
+      </form>
+      <p class="auth-alt">${up ? 'Already have an account?' : 'New to FinStack?'} <button class="link" data-action="auth-mode" data-id="${up ? 'signin' : 'signup'}">${up ? 'Sign in' : 'Create an account'}</button></p>
+      ${up ? '' : '<button class="link auth-forgot" data-action="auth-forgot">Forgot password?</button>'}
+    </section></div>`;
+    observe(view);
+    document.title = (up ? 'Create account' : 'Sign in') + ' · FinStack';
+  }
+  const syncText = (s) => ({ saving: 'Saving…', offline: 'Not synced yet — will retry', synced: 'All changes synced' }[s] || 'Synced');
+  if (CLOUD) cloud.onStatus((s) => {
+    const t = $('#sync-text'); if (t) t.textContent = syncText(s);
+    const d = $('.sync-dot'); if (d) d.dataset.s = s;
+  });
+  const authMsg = (text, kind) => { const el = $('#auth-msg'); if (el) { el.textContent = text; el.dataset.kind = kind || 'bad'; } };
+
+  function clearLocal() {
+    FinData.clear(); store.del(SPEND_KEY); store.del('finstack.name'); store.del('finstack.owner');
+    if (CLOUD) cloud.clearQueue();
+    state.model = FinData.sample(); state.spends = []; state.budgetTab = null; state.editMonthly = false; recalc();
+  }
+  function applyRemote(r) {
+    state.model = FinData.revive(r.model) || FinData.sample();
+    FinData.save(state.model);
+    if (r.prefs && r.prefs.name != null) store.set('finstack.name', r.prefs.name);
+    state.spends = r.spends; saveSpends();
+    state.pulledAt = Date.now();
+    recalc(); renderDrawer();
+    if (started && !$('#modal-root').firstChild && !state.editMonthly) render(true, true);
+  }
+  async function refresh() {
+    try { applyRemote(await cloud.pull()); } catch (e) { toast('Could not reach your account. Showing what is saved on this device.', 'warn'); }
+  }
+  /* Called once per signed-in user (at launch or right after signing in). */
+  async function openAccount(u) {
+    if (state.userId === u.id) return;
+    state.userId = u.id;
+    const owner = store.get('finstack.owner');
+    const local = { model: FinData.load(), spends: loadSpends() };
+    const hasLocal = !local.model.meta.sample || local.spends.length > 0;
+    if (owner && owner !== u.id) clearLocal();                       /* someone else's copy on a shared device */
+    state.legacy = !owner && hasLocal ? local : null;                 /* data from before accounts were turned on */
+    store.set('finstack.owner', u.id);
+    state.model = FinData.load(); state.spends = loadSpends(); recalc();
+    document.body.classList.remove('locked');
+    renderDrawer();
+    if (started) render();
+    let remote;
+    try { remote = await cloud.pull(); } catch (e) { toast('Could not reach your account. Showing what is saved on this device.', 'warn'); return; }
+    if (state.legacy) { state.remote = remote; legacyModal(); } else applyRemote(remote);
+  }
+  function legacyModal() {
+    const L = state.legacy;
+    const what = [!L.model.meta.sample ? `your imported workbook (${esc(L.model.meta.source || 'Excel')})` : '', L.spends.length ? `${L.spends.length} Spend Tracker entr${L.spends.length === 1 ? 'y' : 'ies'}` : ''].filter(Boolean).join(' and ');
+    openModal(`<h2>Bring this device's data?</h2>
+      <p class="modal-sub">This browser has ${what} saved from before you signed in. Copy ${L.spends.length + (!L.model.meta.sample ? 1 : 0) > 1 ? 'them' : 'it'} into your account so it shows up on your other devices too.</p>
+      ${state.remote.exists && state.remote.model && !L.model.meta.sample ? '<p class="fine">' + I.info + '<span>Your account already has a workbook. The one on this device will replace it.</span></p>' : ''}
+      <div class="modal-actions"><button class="btn" data-action="legacy-skip">Not now</button><button class="btn btn-primary" data-action="legacy-copy">${I.upload}Copy to my account</button></div>`, 'sticky');
+  }
+
   function render(keepScroll, still) {
+    if (locked()) { renderAuth(); return; }
+    document.body.classList.remove('locked');
     const route = currentRoute(), view = $('#view');
     view.innerHTML = `<div class="page page-${route} ${still ? 'still' : ''}">${views[route]()}</div>`;
     if (still) $$('[data-reveal]', view).forEach((el) => el.classList.add('in'));
@@ -776,8 +872,10 @@
       <button class="drawer-btn" data-action="name">${I.user}<span>Display name</span></button>
       <button class="drawer-btn" data-action="font">${I.type}<span>Change font</span></button>
       <button class="drawer-btn" data-action="theme">${light ? I.moon : I.sun}<span>${light ? 'Dark theme' : 'Light theme'}</span></button>
-      ${meta.sample ? '' : `<button class="drawer-btn" data-action="reset">${I.reset}<span>Remove my data</span></button>`}
-      <p class="fine">Your numbers are stored only in this browser.</p>`;
+      ${meta.sample && !state.spends.length ? '' : `<button class="drawer-btn" data-action="reset">${I.reset}<span>Remove my data</span></button>`}
+      ${CLOUD && cloud.user() ? `<button class="drawer-btn" data-action="sign-out">${I.arrow}<span>Sign out</span></button>
+        <p class="fine account-line"><span class="sync-dot" data-s="${cloud.status()}"></span><span><b>${esc(cloud.user().email)}</b><br><span id="sync-text">${syncText(cloud.status())}</span></span></p>`
+        : `<p class="fine">${state.offline ? 'Offline — changes will sync when you are back online.' : 'Your numbers are stored only in this browser.'}</p>`}`;
     $('#menu-close').innerHTML = I.close;
   }
   function setDrawer(open) {
@@ -823,8 +921,8 @@
       const firstImport = state.model.meta.sample;
       state.model = model;
       recalc();
-      const saved = FinData.save(model);
       if (firstImport && store.get('finstack.name') == null && model.income[0]) store.set('finstack.name', model.income[0].name);
+      const saved = persist();
       state.budgetTab = null;
       state.editMonthly = false;
       const found = [[model.banks.length, 'bank accounts'], [model.funds.length, 'funds and deposits'], [model.cards.length, 'credit cards'], [sum(model.budget.groups, (g) => g.items.length), 'budget categories'], [model.monthly.expenses.length, 'monthly expenses'], [model.emis.length, 'EMIs']].filter((x) => x[0]);
@@ -880,21 +978,67 @@
     },
     reset() {
       setDrawer(false);
-      openModal(`<h2>Remove your data?</h2><p class="modal-sub">This clears the imported numbers and your Spend Tracker entries from this browser and goes back to sample data. Your Excel file is not touched.</p><div class="modal-actions"><button class="btn" data-action="modal-close">Cancel</button><button class="btn btn-danger" data-action="reset-yes">Remove</button></div>`);
+      const acct = CLOUD && cloud.user();
+      openModal(`<h2>Remove your data?</h2><p class="modal-sub">${acct
+        ? 'This permanently deletes your imported numbers and every Spend Tracker entry from your account and from this browser. It cannot be undone. Your Excel file is not touched, and your account stays open.'
+        : 'This clears the imported numbers and your Spend Tracker entries from this browser and goes back to sample data. Your Excel file is not touched.'}</p><div class="modal-actions"><button class="btn" data-action="modal-close">Cancel</button><button class="btn btn-danger" data-action="reset-yes">${acct ? 'Delete everything' : 'Remove'}</button></div>`);
     },
-    'reset-yes'() { FinData.clear(); store.del('finstack.name'); store.del(SPEND_KEY); state.spends = []; state.model = FinData.sample(); recalc(); state.budgetTab = null; closeModal(); renderDrawer(); render(); toast('Your data was removed from this browser'); },
+    async 'reset-yes'(el) {
+      const acct = CLOUD && cloud.user();
+      if (acct) {
+        el.disabled = true;
+        try { await cloud.wipe(); } catch (e) { el.disabled = false; toast('Could not delete from your account. Check your connection and try again.', 'bad'); return; }
+      }
+      const owner = store.get('finstack.owner');
+      clearLocal();
+      if (acct) store.set('finstack.owner', owner);
+      closeModal(); renderDrawer(); render();
+      toast(acct ? 'Your data was deleted' : 'Your data was removed from this browser');
+    },
+    'sign-out'() {
+      setDrawer(false);
+      const pending = cloud.pending();
+      openModal(`<h2>Sign out?</h2><p class="modal-sub">${pending ? '<b>Some changes have not reached your account yet</b> and will be lost if you sign out now. Connect to the internet first to keep them.' : 'Your data stays in your account. This browser\'s copy is removed, so the next person using it cannot see your numbers.'}</p>
+        <div class="modal-actions"><button class="btn" data-action="modal-close">Cancel</button><button class="btn ${pending ? 'btn-danger' : 'btn-primary'}" data-action="sign-out-yes">Sign out</button></div>`);
+    },
+    async 'sign-out-yes'(el) {
+      el.disabled = true;
+      try { await cloud.signOut(); } catch (e) { /* the local session is cleared regardless */ }
+      closeModal();
+    },
+    'auth-mode'(el) { state.authMode = el.dataset.id; renderAuth(); const f = $('#view input[name="email"]'); if (f) f.focus(); },
+    async 'auth-forgot'(el) {
+      const email = ($('#view input[name="email"]') || {}).value;
+      if (!email || !/\S+@\S+\.\S+/.test(email)) { authMsg('Enter your email above first, then tap Forgot password.'); return; }
+      el.disabled = true;
+      try { await cloud.resetPassword(email.trim()); authMsg('If that email has an account, a reset link is on its way. Open it on this device.', 'good'); }
+      catch (e) { authMsg(e.message || 'Could not send the reset email.'); }
+      el.disabled = false;
+    },
+    'legacy-copy'() {
+      const L = state.legacy, R = state.remote;
+      const ids = new Set(R.spends.map((s) => s.id));
+      L.spends.forEach((s) => { if (!ids.has(s.id)) { R.spends.push(s); cloud.saveSpend(s); } });
+      if (!L.model.meta.sample) { R.model = L.model; R.exists = true; }
+      state.legacy = null; closeModal();
+      applyRemote(R);
+      if (R.model) cloud.saveData(state.model, prefs());
+      toast('Copied to your account');
+    },
+    'legacy-skip'() { state.legacy = null; closeModal(); applyRemote(state.remote); },
     'modal-close'() { closeModal(); },
-    'modal-back'(el, e) { if (e.target === el) closeModal(); },
+    'modal-back'(el, e) { if (e.target === el && !el.classList.contains('sticky')) closeModal(); },
     tab(el) { state.budgetTab = el.dataset.id; $('#cat-panel').innerHTML = catPanel(); paint($('#cat-panel')); },
     period(el) { state.yearly = el.dataset.id === 'y'; $('#cat-panel').innerHTML = catPanel(); paint($('#cat-panel')); },
     'add-account'() { accountModal(); },
-    'del-account'(el) { state.model.banks.splice(Number(el.dataset.id), 1); FinData.save(state.model); recalc(); render(true); toast('Account removed'); },
+    'del-account'(el) { state.model.banks.splice(Number(el.dataset.id), 1); persist(); recalc(); render(true); toast('Account removed'); },
     'sim-preset'(el) { updateSim(el.dataset.id); },
     'spend-add'() { spendModal(); },
     'spend-edit'(el) { spendModal(el.dataset.id); },
     'spend-del'(el) {
       state.spends = state.spends.filter((s) => s.id !== el.dataset.id);
-      saveSpends(); closeModal(); render(true, true); toast('Entry deleted');
+      saveSpends(); if (CLOUD) cloud.deleteSpend(el.dataset.id);
+      closeModal(); render(true, true); toast('Entry deleted');
     },
     'spend-month'(el) {
       const d = Number(el.dataset.d), now = monthKey(new Date());
@@ -903,7 +1047,7 @@
       render(true);
     },
     'mt-edit'() { state.editMonthly = true; render(true); },
-    'mt-done'() { state.editMonthly = false; FinData.save(state.model); recalc(); render(true); toast('Monthly track saved'); },
+    'mt-done'() { state.editMonthly = false; persist(); recalc(); render(true); toast('Monthly track saved'); },
     'mt-add'(el) {
       const key = el.dataset.list, list = listAt(key);
       list.push(key === 'emis' ? { name: '', monthly: 0, paid: 0, total: 6, end: '', bank: '' } : key === 'monthly.notes' ? { name: '', amount: 0, note: '' } : { name: '', amount: 0 });
@@ -952,7 +1096,8 @@
   document.addEventListener('change', (e) => {
     /* Picking a category pre-selects its usual type; the user can still change it. */
     if (e.target.name !== 'cat' || !e.target.closest('[data-form="spend"]')) return;
-    const t = $(`[data-form="spend"] [name="type"][value="${e.target.dataset.type}"]`);
+    const opt = e.target.selectedOptions && e.target.selectedOptions[0];
+    const t = opt && $(`[data-form="spend"] [name="type"][value="${opt.dataset.type}"]`);
     if (t) t.checked = true;
   });
   document.addEventListener('input', (e) => {
@@ -970,6 +1115,7 @@
     const f = new FormData(form);
     if (form.dataset.form === 'name') {
       store.set('finstack.name', String(f.get('name')).trim());
+      persist();
       closeModal(); render(true); toast('Name updated');
     } else if (form.dataset.form === 'newmonth') {
       const M = state.model.monthly;
@@ -978,9 +1124,31 @@
       M.misc = 0;
       M.label = String(f.get('label')).trim() || FinData.monthLabel(new Date());
       if (f.get('emi')) state.model.emis.forEach((x) => { if (x.total && x.paid < x.total) x.paid += 1; });
-      FinData.save(state.model); recalc();
+      persist(); recalc();
       state.editMonthly = false;
       closeModal(); render(true); toast(`${M.label} started`);
+    } else if (form.dataset.form === 'auth') {
+      const email = String(f.get('email')).trim(), password = String(f.get('password'));
+      const btn = $('button.btn-primary', form), up = state.authMode === 'signup';
+      btn.disabled = true; authMsg('', 'good');
+      (async () => {
+        try {
+          if (up) {
+            const r = await cloud.signUp(email, password);
+            if (r.needsConfirm) { state.authMode = 'signin'; renderAuth(); $('#view input[name="email"]').value = email; authMsg(`Almost there. Open the confirmation link sent to ${email}, then sign in here.`, 'good'); return; }
+          } else {
+            await cloud.signIn(email, password);
+          }
+          /* openAccount runs from the SIGNED_IN event. */
+        } catch (err) {
+          const m = String(err && err.message || '');
+          authMsg(/invalid login/i.test(m) ? 'That email and password do not match.' : /not confirmed/i.test(m) ? 'Confirm your email first — check your inbox for the link.' : /already registered/i.test(m) ? 'That email already has an account. Sign in instead.' : /fetch|network/i.test(m) ? 'Could not reach the server. Check your connection and try again.' : m || 'Something went wrong. Try again.');
+        } finally { if (btn.isConnected) btn.disabled = false; }
+      })();
+    } else if (form.dataset.form === 'newpass') {
+      const btn = $('button.btn-primary', form); btn.disabled = true;
+      cloud.updatePassword(String(f.get('password'))).then(() => { closeModal(); toast('Password updated'); })
+        .catch((err) => { btn.disabled = false; toast(err.message || 'Could not update the password', 'bad'); });
     } else if (form.dataset.form === 'spend') {
       const amount = Math.round((Number(f.get('amount')) || 0) * 100) / 100;
       const date = String(f.get('date'));
@@ -990,6 +1158,7 @@
       const i = state.spends.findIndex((s) => s.id === id);
       if (i >= 0) { entry.at = state.spends[i].at; state.spends[i] = entry; } else state.spends.push(entry);
       saveSpends();
+      if (CLOUD) cloud.saveSpend(entry);
       state.spendMonth = date.slice(0, 7);
       state.spendAdded = id;
       closeModal(); render(true); paint($('#view'), true);
@@ -1004,7 +1173,7 @@
       at = at < 0 ? list.length : at + 1;
       list.splice(at, 0, account);
       if (state.model.meta.sample) state.model.meta.source = 'Sample data + your additions';
-      FinData.save(state.model);
+      persist();
       recalc();
       state.justAdded = at;
       closeModal(); render(true);
@@ -1015,6 +1184,7 @@
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if ($('#modal-root .sticky')) return;
     if ($('#modal-root').firstChild) closeModal(); else setDrawer(false);
   });
   $('#eye-all').addEventListener('click', () => {
@@ -1028,7 +1198,7 @@
   $('#file-input').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; handleFile(f); });
   window.addEventListener('dragover', (e) => { e.preventDefault(); const d = $('#drop'); if (d) d.classList.add('over'); });
   window.addEventListener('dragleave', () => { const d = $('#drop'); if (d) d.classList.remove('over'); });
-  window.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) handleFile(f); });
+  window.addEventListener('drop', (e) => { e.preventDefault(); if (locked()) return; const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) handleFile(f); });
   window.addEventListener('hashchange', () => render());
   setInterval(tick, 1000);
 
@@ -1046,6 +1216,30 @@
   }
   $('#splash').addEventListener('click', start);
   setTimeout(start, reduceMotion ? 500 : 2500);
+
+  if (CLOUD) {
+    const onAuth = (event, u) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        openModal(`<h2>Choose a new password</h2><p class="modal-sub">You opened a reset link. Set a new password for your account.</p>
+          <form data-form="newpass"><label>New password<input name="password" type="password" minlength="8" autocomplete="new-password" required></label><button class="btn btn-primary">Save password</button></form>`, 'sticky');
+      }
+      if (u) { openAccount(u); return; }
+      if (event === 'SIGNED_OUT' && state.userId) {
+        state.userId = null; clearLocal(); renderDrawer(); setDrawer(false); render();
+      }
+    };
+    cloud.init(onAuth).then((u) => {
+      state.cloudReady = true;
+      if (u) openAccount(u); else if (started) render();
+    }).catch((err) => {
+      /* No connection at launch: if this device already belongs to an account, work from its copy. */
+      if (store.get('finstack.owner')) { state.offline = true; state.cloudReady = true; renderDrawer(); if (started) render(); toast('Offline — showing the copy saved on this device', 'warn'); }
+      else { state.cloudError = err.message; if (started) render(); }
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && cloud.user() && Date.now() - state.pulledAt > 60000 && !$('#modal-root').firstChild && !state.editMonthly) refresh();
+    });
+  }
 
   window.FinStack = { state, render, handleFile };
 })();

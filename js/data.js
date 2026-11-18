@@ -379,16 +379,20 @@
   }
 
   /* ---------- Storage ---------- */
+  /* Turn saved JSON (from this browser or from the cloud) back into a complete model. */
+  function revive(saved) {
+    if (!saved || typeof saved !== 'object' || !saved.meta) return null;
+    const model = Object.assign(emptyModel(), saved);
+    model.monthly = Object.assign(emptyMonthly(), saved.monthly || {});
+    if (!saved.monthly && saved.bills) model.monthly.prev = saved.bills;   /* data saved by an older version */
+    delete model.bills;
+    return model;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const saved = JSON.parse(raw), model = Object.assign(emptyModel(), saved);
-        model.monthly = Object.assign(emptyMonthly(), saved.monthly || {});
-        if (!saved.monthly && saved.bills) model.monthly.prev = saved.bills;   /* data saved by an older version */
-        delete model.bills;
-        return model;
-      }
+      const model = raw && revive(JSON.parse(raw));
+      if (model) return model;
     } catch (e) { /* fall through to sample */ }
     return sample();
   }
@@ -402,5 +406,5 @@
     return fromWorkbook(wb, file.name);
   }
 
-  global.FinData = { load, save, clear, sample, metrics, importFile, fromWorkbook, nice, sum, monthLabel };
+  global.FinData = { load, save, clear, revive, sample, metrics, importFile, fromWorkbook, nice, sum, monthLabel };
 })(window);

@@ -764,6 +764,8 @@
   }
 
   /* ---------- Accounts ---------- */
+  /* The logo mark, same artwork as index.html; reuses the splash's stacking animation. */
+  const LOGO = $('.splash-logo').outerHTML.replace('splash-logo', 'auth-logo');
   const locked = () => CLOUD && !state.offline && (!state.cloudReady || !cloud.user());
   function renderAuth() {
     document.body.classList.add('locked');
@@ -775,7 +777,7 @@
     }
     const up = state.authMode === 'signup';
     view.innerHTML = `<div class="page page-auth"><section class="card auth" data-reveal>
-      <span class="auth-logo">${I.layers}</span>
+      <div class="auth-brand">${LOGO}<span>Fin<b>Stack</b></span></div>
       <h1>${up ? 'Create your account' : 'Welcome back'}</h1>
       <p class="modal-sub">${up ? 'Your numbers are saved to your account and stay in sync on your phone and computer.' : 'Sign in to see your numbers on any device.'}</p>
       <form data-form="auth">

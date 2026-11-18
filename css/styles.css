@@ -51,11 +51,13 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 }
 #splash.done { opacity: 0; transform: scale(1.06); visibility: hidden; pointer-events: none; }
 .splash-inner { display: grid; justify-items: center; gap: 14px; }
-.splash-logo { width: 92px; height: 92px; overflow: visible; }
-.layer { fill: var(--accent); }
-.layer.l2 { opacity: .6; } .layer.l3 { opacity: .3; }
-.splash-logo .layer { animation: drop .7s var(--ease) both; }
-.splash-logo .l3 { animation-delay: .1s; } .splash-logo .l2 { animation-delay: .32s; } .splash-logo .l1 { animation-delay: .54s; }
+/* Logo: blocks stacked into rising columns, with a coin on top. */
+.mark { fill: var(--accent); overflow: visible; }
+.splash-logo { width: 96px; height: 96px; }
+.splash-logo .blk { transform-box: fill-box; transform-origin: 50% 100%; animation: stackIn .5s var(--ease) both; animation-delay: calc(var(--d) * 55ms + 100ms); }
+.splash-logo .coin { transform-box: fill-box; transform-origin: 50% 50%; animation: coinIn .7s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--d) * 55ms + 160ms); }
+@keyframes stackIn { from { opacity: 0; transform: translateY(-14px) scaleY(.6); } }
+@keyframes coinIn { 0% { opacity: 0; transform: translateY(-18px) scale(.3); } 60% { opacity: 1; } }
 @keyframes drop { from { transform: translateY(-34px); opacity: 0; } }
 .splash-word { font-size: 40px; font-weight: 650; letter-spacing: -.03em; display: flex; overflow: hidden; padding: 2px 0; }
 .splash-word span { display: inline-block; animation: rise .6s var(--ease) both; }
@@ -86,7 +88,9 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .burger i:nth-child(2) { width: 70%; }
 #menu-btn:hover .burger i:nth-child(2) { width: 100%; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.02em; font-size: 16px; }
-.brand svg { width: 24px; height: 24px; }
+.brand svg { width: 24px; height: 24px; transition: transform .3s var(--ease); }
+.brand:hover svg { transform: translateY(-2px); }
+.brand b { font-weight: inherit; color: var(--accent); }
 
 #scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .5); animation: fade .25s both; }
 #drawer {
@@ -558,8 +562,11 @@ body.locked #menu-btn, body.locked #eye-all { visibility: hidden; }
 .page-auth .loading { color: var(--text-2); }
 .page-auth .loading > .ic { width: 30px; height: 30px; color: var(--bad); }
 .auth { width: min(400px, 100%); margin: 0 auto; display: grid; gap: 14px; padding: 28px 24px; }
-.auth-logo { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--glow); color: var(--accent); }
-.auth-logo .ic { width: 26px; height: 26px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 650; letter-spacing: -.03em; margin-bottom: 6px; }
+.auth-brand b { font-weight: inherit; color: var(--accent); }
+.auth-logo { width: 46px; height: 46px; }
+.auth-logo .blk { transform-box: fill-box; transform-origin: 50% 100%; animation: stackIn .5s var(--ease) both; animation-delay: calc(var(--d) * 55ms + 250ms); }
+.auth-logo .coin { transform-box: fill-box; transform-origin: 50% 50%; animation: coinIn .7s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--d) * 55ms + 300ms); }
 .auth h1 { font-size: 24px; letter-spacing: -.03em; font-weight: 650; }
 .auth form { gap: 12px; margin-top: 4px; }
 .auth form .btn { margin-top: 4px; }

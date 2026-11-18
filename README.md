@@ -43,6 +43,12 @@ The **Monthly Track** page mirrors the `Monthly track` sheet and is editable in 
 
 Edits live in the browser, not in the Excel file. Re-importing the workbook replaces them.
 
+## Spend Tracker
+
+Log what you actually spend. Tap the **+** button, pick the date, enter the amount, choose a category and whether it was a Need, Want or Savings (choosing a category pre-selects its usual type). Each month gets its own dashboard: totals by Need / Want / Savings compared against your Budget Plan, a category breakdown, a day-by-day chart and the list of entries. Use the arrows next to the month to look back. Tap an entry to edit or delete it.
+
+Entries are stored in the browser under their own key, so re-importing the workbook does not remove them. **Remove my data** does.
+
 ## Fonts
 
 Open the menu and choose **Change font** to switch fonts; the app updates as you tap, and the choice is remembered on that device.

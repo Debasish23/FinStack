@@ -47,6 +47,9 @@
     minus: svg('<path d="M5 12h14"/>'),
     type: svg('<path d="M5 7V5h14v2M12 5v14M9 19h6"/>'),
     plane: svg('<path d="M3 13.5 21 5l-4.5 15-4-6.5-9.5 0Z"/><path d="m12.5 13.5 4-5"/>'),
+    receipt: svg('<path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 21V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+    left: svg('<path d="m15 6-6 6 6 6"/>'),
+    right: svg('<path d="m9 6 6 6-6 6"/>'),
   };
   const S = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)'];
 
@@ -588,12 +591,146 @@
     paint($('#view'));
   }
 
+  /* ---------- Spend tracker ----------
+     Entries live under their own key so re-importing the workbook never wipes them. */
+  const SPEND_KEY = 'finstack.spends.v1';
+  const SPEND_CATS = [
+    ['Rent', 'need'], ['Househelp', 'need'], ['Car Clean', 'need'], ['Rourkela Rent', 'need'], ['Mobile Bill', 'need'],
+    ['Electricity Bill', 'need'], ['Fuel', 'need'], ['Groceries', 'need'], ['Internet', 'need'], ['LPG', 'need'],
+    ['Medicine', 'need'], ['Car', 'need'], ['Maintenance', 'need'], ['Shopping', 'want'], ['Household Items', 'need'],
+    ['Dining Out', 'want'], ['Subscriptions', 'want'], ['Travel', 'want'], ['Miscellaneous', 'want'], ['PPF', 'savings'],
+    ['NPS', 'savings'], ['SIP', 'savings'], ['Investments', 'savings'], ['Insurance', 'need'], ['CAR Road Tax', 'need'],
+  ];
+  const TYPES = [{ key: 'need', label: 'Need', color: S[0] }, { key: 'want', label: 'Want', color: S[1] }, { key: 'savings', label: 'Savings', color: S[2] }];
+  const typeOf = (k) => TYPES.find((t) => t.key === k) || TYPES[0];
+  function loadSpends() {
+    try {
+      const a = JSON.parse(store.get(SPEND_KEY) || '[]');
+      return Array.isArray(a) ? a.filter((x) => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date) && Number(x.amount) > 0) : [];
+    } catch (e) { return []; }
+  }
+  const saveSpends = () => store.set(SPEND_KEY, JSON.stringify(state.spends));
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const monthKey = (d) => ymd(d).slice(0, 7);
+  const keyDate = (key, day) => { const [y, mo] = key.split('-').map(Number); return new Date(y, mo - 1, day || 1); };
+  const monthName = (key) => keyDate(key).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const shiftMonth = (key, n) => { const d = keyDate(key); d.setMonth(d.getMonth() + n); return monthKey(d); };
+  const dayLabel = (s) => { const [y, mo, d] = s.split('-').map(Number); return new Date(y, mo - 1, d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  state.spends = loadSpends();
+  state.spendMonth = monthKey(new Date());
+  state.spendAdded = '';
+
+  function daysChart(list, key) {
+    const [yy, mm] = key.split('-').map(Number);
+    const n = new Date(yy, mm, 0).getDate(), today = new Date(), thisMonth = monthKey(today) === key;
+    const per = Array.from({ length: n }, () => ({ need: 0, want: 0, savings: 0, total: 0 }));
+    list.forEach((s) => { const d = per[Number(s.date.slice(8)) - 1]; if (d) { d[s.type] += s.amount; d.total += s.amount; } });
+    const max = Math.max(1, ...per.map((d) => d.total));
+    const cols = per.map((d, i) => {
+      const segs = TYPES.map((t) => d[t.key] ? `<i style="height:${(d[t.key] / max) * 100}%;background:${t.color}"></i>` : '').join('');
+      const tip = `${i + 1} ${keyDate(key).toLocaleDateString('en-IN', { month: 'short' })}${state.reveal && d.total ? ' · ' + fmtFull(d.total) : ''}`;
+      return `<div class="day ${thisMonth && i + 1 === today.getDate() ? 'today' : ''}" style="--i:${i}" title="${esc(tip)}">${segs}</div>`;
+    }).join('');
+    const ticks = [1, 8, 15, 22, n].map((d) => `<span style="left:${((d - 0.5) / n) * 100}%">${d}</span>`).join('');
+    return `<div class="days" style="--n:${n}">${cols}</div><div class="day-ticks">${ticks}</div>
+      <ul class="legend legend-row">${TYPES.map((t) => `<li><i style="background:${t.color}"></i><span class="lg-name">${t.label}</span></li>`).join('')}</ul>`;
+  }
+
+  views.spend = function () {
+    const { m } = state, key = state.spendMonth, nowKey = monthKey(new Date());
+    const list = state.spends.filter((s) => s.date.startsWith(key)).sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0));
+    const total = sum(list, (s) => s.amount);
+    const plan = { need: m.needs + m.insurance, want: m.wants, savings: m.savings };
+    const byType = TYPES.map((t) => Object.assign({}, t, { value: sum(list.filter((s) => s.type === t.key), (s) => s.amount), plan: plan[t.key] }));
+
+    const verdict = (t) => {
+      if (!t.plan) return '';
+      const r = t.value / t.plan;
+      if (t.key === 'savings') return r >= 1 ? chip('good', 'Saved as planned') : chip('info', `${pct(r)} of plan`);
+      return r > 1 ? chip('bad', 'Over plan') : r > 0.9 ? chip('warn', 'Close to plan') : chip('good', 'Within plan');
+    };
+    const stats = stat('Spent this month', amt(total), `${list.length} entr${list.length === 1 ? 'y' : 'ies'}`, 0) +
+      byType.map((t, i) => stat(t.label, amt(t.value), t.plan ? `${pct(t.value / t.plan)} of monthly plan` : 'No plan in Budget', i + 1)).join('');
+
+    const typeBars = byType.map((t) => {
+      const hi = Math.max(t.value, t.plan) || 1;
+      return `<div class="target"><div class="target-top"><i class="dot" style="background:${t.color}"></i><b>${t.label}</b><span class="grow"></span>${verdict(t)}</div>
+        ${bar(t.value / hi, t.color, t.plan ? `<u style="left:${(t.plan / hi) * 100}%"></u>` : '')}
+        <div class="target-foot"><span>Spent ${amt(t.value)}</span>${t.plan ? `<span>Plan ${amt(t.plan)}</span>` : ''}</div></div>`;
+    }).join('');
+
+    const cats = {};
+    list.forEach((s) => { const c = cats[s.cat] || (cats[s.cat] = { name: s.cat, value: 0, count: 0, types: {} }); c.value += s.amount; c.count += 1; c.types[s.type] = (c.types[s.type] || 0) + s.amount; });
+    const catList = Object.values(cats).sort((a, b) => b.value - a.value);
+    catList.forEach((c) => { c.type = Object.keys(c.types).sort((a, b) => c.types[b] - c.types[a])[0]; });
+    const top = catList.slice(0, 7).map((c, i) => ({ label: c.name, value: c.value, color: S[i % 8] }));
+    if (catList.length > 7) top.push({ label: 'Everything else', value: sum(catList.slice(7), (c) => c.value), color: 'var(--neutral)' });
+    const maxCat = Math.max(1, ...catList.map((c) => c.value));
+    const catRows = `<div class="rows">${catList.map((c, i) => `<div class="row" style="--i:${i}"><span class="row-name">${esc(c.name)}<small>${c.count} entr${c.count === 1 ? 'y' : 'ies'} · ${typeOf(c.type).label}</small></span>${bar(c.value / maxCat, typeOf(c.type).color)}${amt(c.value)}</div>`).join('')}
+      <div class="row row-total"><span class="row-name">Total</span><span></span>${amt(total)}</div></div>`;
+
+    const groups = [];
+    list.forEach((s) => { const g = groups[groups.length - 1]; if (g && g.date === s.date) g.items.push(s); else groups.push({ date: s.date, items: [s] }); });
+    const tx = groups.map((g) => `<div class="tx-day"><div class="tx-date"><b>${esc(dayLabel(g.date))}</b><span class="grow"></span>${amt(sum(g.items, (s) => s.amount))}</div>
+      ${g.items.map((s) => `<button class="tx ${state.spendAdded === s.id ? 'just-added' : ''}" data-action="spend-edit" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.cat)} entry">
+        <i class="dot" style="background:${typeOf(s.type).color}"></i><span class="tx-main"><b>${esc(s.cat)}</b><small>${typeOf(s.type).label}${s.note ? ' · ' + esc(s.note) : ''}</small></span>${amt(s.amount)}${I.pencil}</button>`).join('')}</div>`).join('');
+
+    const isNow = key === nowKey;
+    const toolbar = `<div class="toolbar" data-reveal>
+        <div class="month-nav"><button class="icon-btn sm" data-action="spend-month" data-d="-1" aria-label="Previous month">${I.left}</button>
+          <span class="month">${I.calendar}<b>${esc(monthName(key))}</b></span>
+          <button class="icon-btn sm" data-action="spend-month" data-d="1" aria-label="Next month" ${isNow ? 'disabled' : ''}>${I.right}</button>
+          ${isNow ? '' : `<button class="pill" data-action="spend-month" data-d="0">This month</button>`}</div>
+        <span class="tool-btns"><button class="btn btn-primary" data-action="spend-add">${I.plus}Add spend</button></span></div>`;
+
+    if (!list.length) {
+      return head('Spend Tracker', 'What actually went out this month, as needs, wants and savings.') + toolbar +
+        `<div class="stats">${stats}</div>
+        <section class="card spend-empty" data-reveal><button class="spend-empty-btn" data-action="spend-add">${I.plus}</button>
+          <h2>No spends in ${esc(monthName(key))} yet</h2><p>Tap the plus to log the first one. Each month gets its own dashboard.</p></section>`;
+    }
+    return head('Spend Tracker', 'What actually went out this month, as needs, wants and savings.') + toolbar +
+      `<div class="stats">${stats}</div>
+      <div class="grid2">
+        ${card('Need · Want · Savings', donut(byType.map((t) => ({ label: t.label, value: t.value, color: t.color })), 'Spent') + `<div class="type-bars">${typeBars}</div>`, { sub: plan.need + plan.want + plan.savings ? 'The marker on each bar is the monthly amount from your Budget Plan.' : '' })}
+        ${card('By category', donut(top, 'Spent'), { i: 1 })}
+      </div>
+      <div class="grid2">
+        ${card('Category breakdown', catRows)}
+        <div class="col">${card('Day by day', daysChart(list, key), { i: 1 })}
+          ${card('Entries', `<div class="tx-list">${tx}</div>`, { i: 2, sub: 'Tap an entry to edit or delete it.' })}</div>
+      </div>`;
+  };
+
+  function spendModal(id) {
+    const s = id ? state.spends.find((x) => x.id === id) : null;
+    const key = state.spendMonth, today = ymd(new Date());
+    const date = s ? s.date : today.startsWith(key) ? today : key + '-01';
+    const cat = s ? s.cat : '';
+    const type = s ? s.type : '';
+    openModal(`<button class="icon-btn modal-x" data-action="modal-close" aria-label="Close">${I.close}</button>
+      <h2>${s ? 'Edit spend' : 'Add spend'}</h2>
+      <form data-form="spend" class="spend-form">
+        <input type="hidden" name="id" value="${esc(s ? s.id : '')}">
+        <div class="form-row"><label>Date<input type="date" name="date" required value="${date}"></label>
+          <label>Amount (₹)<input name="amount" type="number" inputmode="decimal" min="1" step="any" required value="${s ? s.amount : ''}" placeholder="0"></label></div>
+        <fieldset><legend>Category</legend><div class="cats">${SPEND_CATS.map(([c, t]) => `<label class="cat-opt"><input type="radio" name="cat" value="${esc(c)}" data-type="${t}" required ${c === cat ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div></fieldset>
+        <fieldset><legend>Type</legend><div class="type-pick">${TYPES.map((t) => `<label class="type-opt" style="--c:${t.color}"><input type="radio" name="type" value="${t.key}" required ${t.key === type ? 'checked' : ''}><span><i class="dot"></i>${t.label}</span></label>`).join('')}</div></fieldset>
+        <label><span>Note <small>(optional)</small></span><input name="note" maxlength="60" value="${esc(s && s.note ? s.note : '')}" autocomplete="off" placeholder="e.g. Big Bazaar"></label>
+        <div class="modal-actions">${s ? `<button type="button" class="btn btn-danger-ghost" data-action="spend-del" data-id="${esc(s.id)}">${I.trash}Delete</button><span class="grow"></span>` : ''}
+          <button class="btn btn-primary">${s ? `${I.ok}Save` : `${I.plus}Add spend`}</button></div>
+      </form>`, 'sheet');
+    const amount = $('#modal-root [name="amount"]');
+    if (amount && !s) amount.focus();
+  }
+
   /* ---------- Navigation + rendering ---------- */
   const NAV = [
     { route: 'dashboard', label: 'Dashboard', icon: I.home },
     { route: 'investments', label: 'Investment Portfolio', icon: I.chart },
     { route: 'budget', label: 'Budget Plan', icon: I.wallet },
     { route: 'monthly', label: 'Monthly Track', icon: I.calendar },
+    { route: 'spend', label: 'Spend Tracker', icon: I.receipt },
     { route: 'banks', label: 'Bank Accounts', icon: I.bank },
     { route: 'cards', label: 'Credit Cards', icon: I.card },
     { route: 'emergency', label: 'Emergency Deployment', icon: I.shield },
@@ -619,11 +756,13 @@
     observe(view);
     if (route === 'dashboard') tick();
     if (route === 'emergency') updateSim(0);
+    $('#fab').hidden = route !== 'spend';
     $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.route === route));
     document.title = route === 'dashboard' ? 'FinStack' : `${NAV.find((n) => n.route === route).label} · FinStack`;
     if (!keepScroll) scrollTo({ top: 0, behavior: 'instant' });
     state.justAdded = -1;
     state.addedPath = '';
+    state.spendAdded = '';
   }
 
   function renderDrawer() {
@@ -741,9 +880,9 @@
     },
     reset() {
       setDrawer(false);
-      openModal(`<h2>Remove your data?</h2><p class="modal-sub">This clears the imported numbers from this browser and goes back to sample data. Your Excel file is not touched.</p><div class="modal-actions"><button class="btn" data-action="modal-close">Cancel</button><button class="btn btn-danger" data-action="reset-yes">Remove</button></div>`);
+      openModal(`<h2>Remove your data?</h2><p class="modal-sub">This clears the imported numbers and your Spend Tracker entries from this browser and goes back to sample data. Your Excel file is not touched.</p><div class="modal-actions"><button class="btn" data-action="modal-close">Cancel</button><button class="btn btn-danger" data-action="reset-yes">Remove</button></div>`);
     },
-    'reset-yes'() { FinData.clear(); store.del('finstack.name'); state.model = FinData.sample(); recalc(); state.budgetTab = null; closeModal(); renderDrawer(); render(); toast('Your data was removed from this browser'); },
+    'reset-yes'() { FinData.clear(); store.del('finstack.name'); store.del(SPEND_KEY); state.spends = []; state.model = FinData.sample(); recalc(); state.budgetTab = null; closeModal(); renderDrawer(); render(); toast('Your data was removed from this browser'); },
     'modal-close'() { closeModal(); },
     'modal-back'(el, e) { if (e.target === el) closeModal(); },
     tab(el) { state.budgetTab = el.dataset.id; $('#cat-panel').innerHTML = catPanel(); paint($('#cat-panel')); },
@@ -751,6 +890,18 @@
     'add-account'() { accountModal(); },
     'del-account'(el) { state.model.banks.splice(Number(el.dataset.id), 1); FinData.save(state.model); recalc(); render(true); toast('Account removed'); },
     'sim-preset'(el) { updateSim(el.dataset.id); },
+    'spend-add'() { spendModal(); },
+    'spend-edit'(el) { spendModal(el.dataset.id); },
+    'spend-del'(el) {
+      state.spends = state.spends.filter((s) => s.id !== el.dataset.id);
+      saveSpends(); closeModal(); render(true, true); toast('Entry deleted');
+    },
+    'spend-month'(el) {
+      const d = Number(el.dataset.d), now = monthKey(new Date());
+      const next = d ? shiftMonth(state.spendMonth, d) : now;
+      state.spendMonth = next > now ? now : next;
+      render(true);
+    },
     'mt-edit'() { state.editMonthly = true; render(true); },
     'mt-done'() { state.editMonthly = false; FinData.save(state.model); recalc(); render(true); toast('Monthly track saved'); },
     'mt-add'(el) {
@@ -798,6 +949,12 @@
     const seg = e.target.closest('.donut-wrap [data-seg]');
     if (seg) focusSeg(seg.closest('.donut-wrap'), Number(seg.dataset.seg));
   });
+  document.addEventListener('change', (e) => {
+    /* Picking a category pre-selects its usual type; the user can still change it. */
+    if (e.target.name !== 'cat' || !e.target.closest('[data-form="spend"]')) return;
+    const t = $(`[data-form="spend"] [name="type"][value="${e.target.dataset.type}"]`);
+    if (t) t.checked = true;
+  });
   document.addEventListener('input', (e) => {
     if (e.target.id === 'sim-range') { updateSim(e.target.value); return; }
     const el = e.target.closest('[data-bind]');
@@ -824,6 +981,21 @@
       FinData.save(state.model); recalc();
       state.editMonthly = false;
       closeModal(); render(true); toast(`${M.label} started`);
+    } else if (form.dataset.form === 'spend') {
+      const amount = Math.round((Number(f.get('amount')) || 0) * 100) / 100;
+      const date = String(f.get('date'));
+      if (!(amount > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('Enter a date and an amount above zero', 'warn'); return; }
+      const id = String(f.get('id')) || Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const entry = { id, date, amount, cat: String(f.get('cat')), type: String(f.get('type')), note: String(f.get('note') || '').trim(), at: Date.now() };
+      const i = state.spends.findIndex((s) => s.id === id);
+      if (i >= 0) { entry.at = state.spends[i].at; state.spends[i] = entry; } else state.spends.push(entry);
+      saveSpends();
+      state.spendMonth = date.slice(0, 7);
+      state.spendAdded = id;
+      closeModal(); render(true); paint($('#view'), true);
+      const row = $('.tx.just-added');
+      if (row) setTimeout(() => row.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }), 350);
+      toast(i >= 0 ? 'Entry updated' : `${entry.cat} added`);
     } else if (form.dataset.form === 'account') {
       const holder = String(f.get('holder')).trim(), list = state.model.banks;
       const account = { holder, bank: String(f.get('bank')).trim(), balance: Number(f.get('balance')) || 0, min: Number(f.get('min')) || 0, purpose: String(f.get('purpose')).trim(), manual: true };
@@ -862,6 +1034,7 @@
 
   /* ---------- Boot: opening animation, then the dashboard ---------- */
   renderDrawer();
+  $('#fab').innerHTML = I.plus;
   let started = false;
   function start() {
     if (started) return;
